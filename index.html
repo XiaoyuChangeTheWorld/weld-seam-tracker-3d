@@ -1,0 +1,950 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钢板拼缝检测与焊接轨迹 3D 可视化系统</title>
+    <!-- 引入 Outfit 与 Inter 字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0b0e;
+            --panel-bg: rgba(18, 18, 24, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f3f6;
+            --text-secondary: #a0a0ab;
+            --accent-blue: #0070f3;
+            --accent-blue-glow: rgba(0, 112, 243, 0.4);
+            --accent-red: #ff3b30;
+            --accent-red-glow: rgba(255, 59, 48, 0.4);
+            --accent-gold: #ffb300;
+            --accent-gold-glow: rgba(255, 179, 0, 0.4);
+            --accent-cyan: #00d2ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* 3D 容器 */
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI Overlay UI层 */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            grid-template-rows: 80px 1fr;
+            padding: 24px;
+            gap: 24px;
+        }
+
+        /* 统一启用交互 */
+        .interactive {
+            pointer-events: auto;
+        }
+
+        /* 玻璃拟态面板样式 */
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 顶部标题栏 */
+        header {
+            grid-column: 1 / 3;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 100%;
+        }
+
+        .logo-section h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #fff 0%, var(--text-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-section p {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .badge-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 210, 255, 0.1);
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .badge-status::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(0, 210, 255, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 210, 255, 0); }
+        }
+
+        /* 侧边控制面板 */
+        .sidebar {
+            grid-column: 1 / 2;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 150px);
+            scrollbar-width: none; /* Firefox */
+        }
+        .sidebar::-webkit-scrollbar {
+            display: none; /* Chrome/Safari */
+        }
+
+        /* 卡片标题 */
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        /* 控制选项组 */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .control-label {
+            color: var(--text-secondary);
+        }
+
+        /* 开关切换 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 34px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-blue);
+            box-shadow: 0 0 10px var(--accent-blue-glow);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(18px);
+        }
+
+        /* 范围拉杆 */
+        .range-slider {
+            -webkit-appearance: none;
+            width: 120px;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255,255,255,0.15);
+            outline: none;
+        }
+
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--text-primary);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .range-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* 焊接仿真控制 */
+        .sim-controls {
+            display: flex;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        .btn-primary:hover {
+            background: #1e87ff;
+            box-shadow: 0 0 15px var(--accent-blue-glow);
+        }
+
+        /* 统计数据网格 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-val {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-top: 6px;
+        }
+
+        .stat-unit {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 400;
+            margin-left: 2px;
+        }
+
+        /* 说明图例 */
+        .legend-card {
+            margin-top: auto;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        /* 提示信息 */
+        .tips {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            background: rgba(255, 179, 0, 0.05);
+            border: 1px solid rgba(255, 179, 0, 0.15);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+        }
+
+        /* 3D 浮动控制提示 */
+        .view-help {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 16px;
+            z-index: 10;
+        }
+
+        .view-help span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .view-help span::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #a0a0ab;
+        }
+
+        /* 仿真时的焊接火花粒子效果 */
+        #sparkles {
+            display: none;
+        }
+        .upload-panel { display: flex; flex-direction: column; gap: 12px; }
+        .file-drop { border: 1px dashed rgba(255,255,255,.18); border-radius: 10px; padding: 14px; background: rgba(255,255,255,.04); color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+        .file-drop input { width: 100%; margin-top: 10px; color: var(--text-secondary); font-size: 12px; }
+        .status-text { min-height: 18px; color: var(--accent-cyan); font-size: 12px; line-height: 1.5; }
+        .camera-readout { display: grid; gap: 6px; white-space: pre-line; color: var(--text-secondary); font-family: Consolas, monospace; font-size: 11px; line-height: 1.35; }    </style>
+</head>
+<body>
+    <!-- 3D渲染容器 -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay层 -->
+    <div class="ui-layer">
+        <!-- 头部标题栏 -->
+        <header class="glass-panel interactive">
+            <div class="logo-section">
+                <h1>STEEL PLATE WELD SEAM TRACKER 3D</h1>
+                <p>钢板物理拼缝检测与中心轨迹连续追踪系统</p>
+            </div>
+            <div class="badge-status">
+                系统运行就绪 | 物理间隙检测模式
+            </div>
+        </header>
+
+        <!-- 侧边面板 -->
+        <div class="sidebar interactive">
+            <!-- 场景图层控制 -->
+            <div class="glass-panel">
+                <div class="section-title">
+                    <span>图层与显示控制</span>
+                </div>
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="control-label">原始钢板点云 (灰色)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-plates" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">拼缝边界点云 (蓝色)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-gap" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">拟合中心轨迹 (红色)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-traj" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">相机位姿 / XYZ 坐标轴</span>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-camera-rig" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-row" style="margin-top: 6px;">
+                        <span class="control-label">点云大小调节</span>
+                        <input type="range" id="point-size" class="range-slider" min="0.0005" max="0.0040" step="0.0001" value="0.0015">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 焊接仿真测试 -->
+            <div class="glass-panel upload-panel">
+                <div class="section-title"><span>PLY 上传检测</span></div>
+                <label class="file-drop">
+                    上传 PLY 后，浏览器会在本地重新检测焊缝并刷新三维轨迹。
+                    <input type="file" id="ply-upload" accept=".ply">
+                </label>
+                <div class="sim-controls">
+                    <button class="btn btn-primary" id="btn-detect-upload">运行检测</button>
+                    <button class="btn" id="btn-use-demo">恢复示例</button>
+                </div>
+                <div class="status-text" id="upload-status">等待上传 PLY 文件</div>
+                <div class="camera-readout" id="camera-readout"></div>
+            </div>            <div class="glass-panel">
+                <div class="section-title">
+                    <span>焊接过程仿真演示</span>
+                </div>
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="control-label">焊接运动速度</span>
+                        <input type="range" id="sim-speed" class="range-slider" min="1" max="10" step="1" value="4">
+                    </div>
+                    <div class="sim-controls">
+                        <button class="btn btn-primary" id="btn-play">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            启动仿真
+                        </button>
+                        <button class="btn" id="btn-reset">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            重置
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据报表 -->
+            <div class="glass-panel">
+                <div class="section-title">
+                    <span>拼缝三维特征参数</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">拼缝总长度</span>
+                        <div class="stat-val" id="stat-length">-- <span class="stat-unit">mm</span></div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">缝隙平均宽度</span>
+                        <div class="stat-val" id="stat-width">-- <span class="stat-unit">mm</span></div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">输入原始点云</span>
+                        <div class="stat-val" id="stat-pts">-- <span class="stat-unit">万点</span></div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">估计耗时 (5mm/s)</span>
+                        <div class="stat-val" id="stat-time">-- <span class="stat-unit">秒</span></div>
+                    </div>
+                </div>
+                <div class="tips">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>首尾端部板材密度存在性校验：点数阈值设定为60。两端低于阈值的伪缝隙已被自动截除以消除弯钩畸变。</span>
+                </div>
+            </div>
+
+            <!-- 说明图例 -->
+            <div class="glass-panel legend-card">
+                <div class="section-title">
+                    <span>图例说明</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #666;"></div>
+                    <span class="control-label">灰色点云：拼拢的双侧钢板表面</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #0070f3; box-shadow: 0 0 6px var(--accent-blue-glow);"></div>
+                    <span class="control-label">蓝色点云：检测到的缝隙物理边界</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff3b30; box-shadow: 0 0 6px var(--accent-red-glow);"></div>
+                    <span class="control-label">红色曲线：三次样条拟合出的焊缝中心轨迹</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffb300; box-shadow: 0 0 6px var(--accent-gold-glow);"></div>
+                    <span class="control-label">黄色圆锥/火花：焊枪喷嘴仿真模拟</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 视角操作提示 -->
+    <div class="view-help">
+        <span>左键：旋转视角</span>
+        <span>右键：平移视角</span>
+        <span>滚轮：缩放画面</span>
+    </div>
+
+    <!-- 载入 WebGL 核心库与 OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+    <script src="weld_upload.js"></script>
+    
+    <!-- 引入之前通过 Python 准备的轻量化点云数据 -->
+    <script src="web_data.js"></script>
+
+    <script>
+        // 初始化变量
+        let scene, camera, renderer, controls;
+        let platePoints, gapPoints, trajLine, torchMesh, sparkParticles;
+        let isSimulating = false;
+        let simProgress = 0;
+        let animationFrameId = null;
+
+        // 轨迹点坐标
+        let trajCoords = WELD_DATA.trajectory;
+        let plateCoords = WELD_DATA.plates;
+        let gapCoords = WELD_DATA.boundaries;
+
+        init();
+        animate();
+
+        function init() {
+            // 1. 创建场景与相机
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x07070a);
+            scene.fog = new THREE.FogExp2(0x07070a, 1.2);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 10);
+            
+            // 2. 创建渲染器
+            const container = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // 3. 视角控制器
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.1; // 稍微允许看一丁点底下
+
+            // 4. 灯光系统
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight1.position.set(2, 5, 3);
+            scene.add(dirLight1);
+
+            const dirLight2 = new THREE.DirectionalLight(0x0070f3, 0.4);
+            dirLight2.position.set(-2, 3, -1);
+            scene.add(dirLight2);
+
+            // 5. 渲染钢板点云
+            renderPlates();
+
+            // 6. 渲染缝隙边界点云
+            renderGapBoundaries();
+
+            // 7. 渲染红色中心轨迹线
+            renderTrajectory();
+
+            // 8. 创建模拟焊枪与焊接火花粒子效果
+            createWeldingTorch();
+            createSparkParticles();
+
+            // 9. 自适应视角（计算包围盒，把相机自动对准物体）
+            fitCameraToScene();
+
+            // 10. 装载统计数据
+            loadStats();
+
+            // 11. 绑定 UI 事件
+            bindUIEvents();
+            if (window.initUploadTools) window.initUploadTools();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // 渲染原始灰色钢板点云
+        function renderPlates() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            
+            for (let i = 0; i < plateCoords.length; i++) {
+                positions.push(plateCoords[i][0], plateCoords[i][1], plateCoords[i][2]);
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: 0x55555d,
+                size: parseFloat(document.getElementById('point-size').value),
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.65
+            });
+            
+            platePoints = new THREE.Points(geometry, material);
+            scene.add(platePoints);
+        }
+
+        // 渲染蓝色边界点云
+        function renderGapBoundaries() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            
+            for (let i = 0; i < gapCoords.length; i++) {
+                positions.push(gapCoords[i][0], gapCoords[i][1], gapCoords[i][2]);
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: 0x00a0ff,
+                size: parseFloat(document.getElementById('point-size').value) * 1.5,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.95
+            });
+            
+            gapPoints = new THREE.Points(geometry, material);
+            scene.add(gapPoints);
+        }
+
+        // 渲染红色中心轨迹线
+        function renderTrajectory() {
+            const points = [];
+            for (let i = 0; i < trajCoords.length; i++) {
+                points.push(new THREE.Vector3(trajCoords[i][0], trajCoords[i][1], trajCoords[i][2]));
+            }
+            
+            // 使用 CatmullRom 样条在前端重新连线，生成极其平滑的三维路径
+            const curve = new THREE.CatmullRomCurve3(points);
+            const curvePoints = curve.getPoints(300);
+            
+            const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff3b30,
+                linewidth: 2 // 某些WebGL实现下可能不支持改变粗细，我们加点辉光材质
+            });
+            
+            trajLine = new THREE.Line(geometry, material);
+            scene.add(trajLine);
+        }
+
+        // 创建焊枪模型
+        function createWeldingTorch() {
+            const group = new THREE.Group();
+            
+            // 1. 焊枪本体 (金黄色金属圆柱)
+            const cylinderGeom = new THREE.CylinderGeometry(0.001, 0.005, 0.03, 16);
+            cylinderGeom.translate(0, 0.015, 0); // 调整基准点在底部尖端
+            const cylinderMat = new THREE.MeshStandardMaterial({
+                color: 0xffb300,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+            const body = new THREE.Mesh(cylinderGeom, cylinderMat);
+            body.rotation.x = Math.PI / 6; // 焊枪偏置一个物理角度
+            group.add(body);
+            
+            // 2. 焊缝电弧弧光 (底部的一个高亮发光半球球体)
+            const arcGeom = new THREE.SphereGeometry(0.003, 16, 16);
+            const arcMat = new THREE.MeshBasicMaterial({
+                color: 0x00ffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            const arc = new THREE.Mesh(arcGeom, arcMat);
+            group.add(arc);
+            
+            // 3. 添加电弧辉光强点光源
+            const arcLight = new THREE.PointLight(0x00ffff, 0.6, 0.05);
+            group.add(arcLight);
+
+            torchMesh = group;
+            torchMesh.position.set(trajCoords[0][0], trajCoords[0][1], trajCoords[0][2]);
+            torchMesh.visible = false;
+            scene.add(torchMesh);
+        }
+
+        // 创建仿真焊接微粒火花
+        function createSparkParticles() {
+            const count = 60;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            const velocities = [];
+
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = 0;
+                
+                // 向上喷射飞散的速度向量
+                velocities.push(
+                    (Math.random() - 0.5) * 0.015,
+                    (Math.random() - 0.5) * 0.015,
+                    (Math.random() * 0.02) + 0.005
+                );
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({
+                color: 0xffd200,
+                size: 0.0015,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending
+            });
+
+            sparkParticles = new THREE.Points(geometry, material);
+            sparkParticles.userData = { velocities: velocities, initialPos: positions.slice() };
+            sparkParticles.visible = false;
+            scene.add(sparkParticles);
+        }
+
+        // 更新火花粒子位置
+        function updateSparks() {
+            if (!sparkParticles.visible) return;
+            
+            const positions = sparkParticles.geometry.attributes.position.array;
+            const velocities = sparkParticles.userData.velocities;
+            const torchPos = torchMesh.position;
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                // 如果粒子飞得太远或落到下方，就重置到焊嘴位置
+                if (Math.abs(positions[i*3] - torchPos.x) > 0.03 || positions[i*3+2] < torchPos.z - 0.01) {
+                    positions[i * 3] = torchPos.x + (Math.random() - 0.5) * 0.001;
+                    positions[i * 3 + 1] = torchPos.y + (Math.random() - 0.5) * 0.001;
+                    positions[i * 3 + 2] = torchPos.z;
+                } else {
+                    // 应用速度和重力
+                    positions[i * 3] += velocities[i][0];
+                    positions[i * 3 + 1] += velocities[i][1];
+                    positions[i * 3 + 2] += velocities[i][2];
+                    
+                    // 模拟重力拉拽
+                    velocities[i][2] -= 0.0008;
+                }
+            }
+            sparkParticles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // 自动计算包围盒并居中相机视角
+        function fitCameraToScene() {
+            const bbox = new THREE.Box3();
+            // 计算灰色钢板点云的物理范围
+            bbox.setFromArray(plateCoords.flat());
+            
+            const center = new THREE.Vector3();
+            bbox.getCenter(center);
+            
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+            
+            // 设置相机对准中心位置
+            controls.target.copy(center);
+            
+            // 把相机倾斜放置在合适的俯瞰角度
+            camera.position.set(center.x - 0.2, center.y - 0.3, center.z + 0.4);
+            
+            controls.update();
+        }
+
+        // 装载左下角面板统计数据
+        function loadStats() {
+            const stats = WELD_DATA.stats;
+            document.getElementById('stat-length').innerHTML = `${stats.seam_length} <span class="stat-unit">mm</span>`;
+            document.getElementById('stat-width').innerHTML = `${stats.avg_width} <span class="stat-unit">mm</span>`;
+            document.getElementById('stat-pts').innerHTML = `${(stats.total_points / 10000).toFixed(1)} <span class="stat-unit">万点</span>`;
+            document.getElementById('stat-time').innerHTML = `${Math.ceil(stats.seam_length / 5.0)} <span class="stat-unit">秒</span>`;
+        }
+
+        // 绑定 UI 按钮和开关
+        function bindUIEvents() {
+            // 图层显隐
+            document.getElementById('toggle-plates').addEventListener('change', (e) => {
+                platePoints.visible = e.target.checked;
+            });
+            document.getElementById('toggle-gap').addEventListener('change', (e) => {
+                gapPoints.visible = e.target.checked;
+            });
+            document.getElementById('toggle-traj').addEventListener('change', (e) => {
+                trajLine.visible = e.target.checked;
+            });
+
+            // 点云大小
+            document.getElementById('point-size').addEventListener('input', (e) => {
+                const sz = parseFloat(e.target.value);
+                platePoints.material.size = sz;
+                gapPoints.material.size = sz * 1.5;
+            });
+
+            // 仿真控制
+            const btnPlay = document.getElementById('btn-play');
+            btnPlay.addEventListener('click', () => {
+                if (isSimulating) {
+                    // 暂停
+                    isSimulating = false;
+                    torchMesh.visible = false;
+                    sparkParticles.visible = false;
+                    btnPlay.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 启动仿真`;
+                } else {
+                    // 开启
+                    isSimulating = true;
+                    torchMesh.visible = true;
+                    sparkParticles.visible = true;
+                    btnPlay.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> 暂停演示`;
+                }
+            });
+
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                isSimulating = false;
+                simProgress = 0;
+                torchMesh.visible = false;
+                sparkParticles.visible = false;
+                btnPlay.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 启动仿真`;
+                
+                // 回归起始点
+                torchMesh.position.set(trajCoords[0][0], trajCoords[0][1], trajCoords[0][2]);
+            });
+        }
+
+        // 窗口尺寸变化
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 主循环
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            
+            // 物理防抖控制器更新
+            controls.update();
+
+            // 如果仿真开启中，更新焊枪位置和喷溅粒子
+            if (isSimulating) {
+                const speedSlider = parseFloat(document.getElementById('sim-speed').value);
+                // 根据速度推进进度
+                simProgress += (0.001 * speedSlider);
+                
+                if (simProgress >= 1.0) {
+                    simProgress = 0; // 自动循环
+                }
+                
+                // 计算当前进度的轨迹插值坐标索引
+                const idxFloat = simProgress * (trajCoords.length - 1);
+                const idxLower = Math.floor(idxFloat);
+                const idxUpper = Math.min(idxLower + 1, trajCoords.length - 1);
+                const weight = idxFloat - idxLower;
+                
+                // 三维线性插值计算焊枪的平滑运动位置
+                const ptLower = trajCoords[idxLower];
+                const ptUpper = trajCoords[idxUpper];
+                
+                const interpX = ptLower[0] + weight * (ptUpper[0] - ptLower[0]);
+                const interpY = ptLower[1] + weight * (ptUpper[1] - ptLower[1]);
+                const interpZ = ptLower[2] + weight * (ptUpper[2] - ptLower[2]);
+                
+                torchMesh.position.set(interpX, interpY, interpZ);
+                
+                // 电弧闪烁效果模拟
+                torchMesh.children[1].material.opacity = 0.5 + Math.random() * 0.5;
+                torchMesh.children[2].intensity = 0.3 + Math.random() * 0.6;
+                
+                // 更新飞溅火花
+                updateSparks();
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
+
+
