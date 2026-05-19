@@ -331,6 +331,20 @@
         scene.add(cameraRigGroup);
         updateCameraReadout(plyCamera);
     }
+    function getPointBounds(points) {
+        if (!points || points.length === 0) return null;
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        for (const point of points) {
+            if (point[0] < minX) minX = point[0];
+            if (point[0] > maxX) maxX = point[0];
+            if (point[1] < minY) minY = point[1];
+            if (point[1] > maxY) maxY = point[1];
+            if (point[2] < minZ) minZ = point[2];
+            if (point[2] > maxZ) maxZ = point[2];
+        }
+        return { minX, minY, minZ, maxX, maxY, maxZ };
+    }
     function addWorldAxes(group, origin, scale) {
         group.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), origin, scale, 0xff3b30, scale * 0.22, scale * 0.08));
         group.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, scale, 0x2ecc71, scale * 0.22, scale * 0.08));
@@ -360,5 +374,6 @@
         if (el) el.textContent = text;
     }
 })();
+
 
 
