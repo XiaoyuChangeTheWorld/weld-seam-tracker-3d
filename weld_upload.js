@@ -424,25 +424,17 @@
     function createCameraMesh(color, scale) {
         const cameraGroup = new THREE.Group();
 
-        // 1. Camera Body (dark grey metal)
+        // 1. Camera Body (visible dark grey)
         const bodyGeom = new THREE.BoxGeometry(scale * 0.16, scale * 0.11, scale * 0.11);
-        const bodyMat = new THREE.MeshStandardMaterial({
-            color: 0x1f1f24,
-            roughness: 0.3,
-            metalness: 0.8
-        });
+        const bodyMat = new THREE.MeshBasicMaterial({ color: 0x4a4a55 });
         const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
         cameraGroup.add(bodyMesh);
 
-        // 2. Camera Lens (black anodized metal)
+        // 2. Camera Lens (dark barrel)
         const lensGeom = new THREE.CylinderGeometry(scale * 0.038, scale * 0.038, scale * 0.07, 16);
         lensGeom.rotateX(Math.PI / 2);
-        lensGeom.translate(0, 0, -scale * 0.09); // pointing down negative Z
-        const lensMat = new THREE.MeshStandardMaterial({
-            color: 0x0f0f12,
-            roughness: 0.2,
-            metalness: 0.9
-        });
+        lensGeom.translate(0, 0, -scale * 0.09);
+        const lensMat = new THREE.MeshBasicMaterial({ color: 0x222228 });
         const lensMesh = new THREE.Mesh(lensGeom, lensMat);
         cameraGroup.add(lensMesh);
 
@@ -472,10 +464,10 @@
         const ledMesh = new THREE.Mesh(ledGeom, ledMat);
         cameraGroup.add(ledMesh);
 
-        // 6. Camera Top Shutter Button (Y = +0.055, X = -0.04)
+        // 6. Camera Top Shutter Button
         const buttonGeom = new THREE.CylinderGeometry(scale * 0.012, scale * 0.012, scale * 0.015, 8);
         buttonGeom.translate(-scale * 0.04, scale * 0.06, 0);
-        const buttonMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, metalness: 0.5 });
+        const buttonMat = new THREE.MeshBasicMaterial({ color: 0xdd4444 });
         const buttonMesh = new THREE.Mesh(buttonGeom, buttonMat);
         cameraGroup.add(buttonMesh);
 
