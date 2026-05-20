@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
     let cameraRigGroup = null;
     let uploadedPlyBuffer = null;
     let uploadedPlyName = '';
@@ -421,15 +421,131 @@
         group.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, scale, 0x2ecc71, scale * 0.22, scale * 0.08));
         group.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, scale, 0x00a0ff, scale * 0.22, scale * 0.08));
     }
+    function createCameraMesh(color, scale) {
+        const cameraGroup = new THREE.Group();
+
+        // 1. Camera Body (dark grey metal)
+        const bodyGeom = new THREE.BoxGeometry(scale * 0.16, scale * 0.11, scale * 0.11);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x1f1f24,
+            roughness: 0.3,
+            metalness: 0.8
+        });
+        const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+        cameraGroup.add(bodyMesh);
+
+        // 2. Camera Lens (black anodized metal)
+        const lensGeom = new THREE.CylinderGeometry(scale * 0.038, scale * 0.038, scale * 0.07, 16);
+        lensGeom.rotateX(Math.PI / 2);
+        lensGeom.translate(0, 0, -scale * 0.09); // pointing down negative Z
+        const lensMat = new THREE.MeshStandardMaterial({
+            color: 0x0f0f12,
+            roughness: 0.2,
+            metalness: 0.9
+        });
+        const lensMesh = new THREE.Mesh(lensGeom, lensMat);
+        cameraGroup.add(lensMesh);
+
+        // 3. Lens Glass Ring / Reflection (glowing cyan / blue)
+        const glassGeom = new THREE.CylinderGeometry(scale * 0.035, scale * 0.035, scale * 0.005, 16);
+        glassGeom.rotateX(Math.PI / 2);
+        glassGeom.translate(0, 0, -scale * 0.126);
+        const glassMat = new THREE.MeshBasicMaterial({
+            color: color, // Use camera's theme color (e.g. cyan, yellow, white, purple)
+            transparent: true,
+            opacity: 0.7
+        });
+        const glassMesh = new THREE.Mesh(glassGeom, glassMat);
+        cameraGroup.add(glassMesh);
+
+        // 4. Back Screen (black rectangle on the back face: Z = +0.055)
+        const screenGeom = new THREE.BoxGeometry(scale * 0.12, scale * 0.08, scale * 0.005);
+        screenGeom.translate(0, 0, scale * 0.057);
+        const screenMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        const screenMesh = new THREE.Mesh(screenGeom, screenMat);
+        cameraGroup.add(screenMesh);
+
+        // 5. Red LED Tally Light (front face, Z = -0.055, near top-right)
+        const ledGeom = new THREE.SphereGeometry(scale * 0.01, 8, 8);
+        ledGeom.translate(scale * 0.05, scale * 0.03, -scale * 0.056);
+        const ledMat = new THREE.MeshBasicMaterial({ color: 0xff3b30 });
+        const ledMesh = new THREE.Mesh(ledGeom, ledMat);
+        cameraGroup.add(ledMesh);
+
+        // 6. Camera Top Shutter Button (Y = +0.055, X = -0.04)
+        const buttonGeom = new THREE.CylinderGeometry(scale * 0.012, scale * 0.012, scale * 0.015, 8);
+        buttonGeom.translate(-scale * 0.04, scale * 0.06, 0);
+        const buttonMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, metalness: 0.5 });
+        const buttonMesh = new THREE.Mesh(buttonGeom, buttonMat);
+        cameraGroup.add(buttonMesh);
+
+        // 7. Frustum Wireframe (showing camera field of view, pointing towards negative Z)
+        const frustumGeom = new THREE.BufferGeometry();
+        const vertices = new Float32Array([
+            0, 0, -scale * 0.12,  -scale * 0.25, -scale * 0.18, -scale * 0.5,
+            0, 0, -scale * 0.12,   scale * 0.25, -scale * 0.18, -scale * 0.5,
+            0, 0, -scale * 0.12,   scale * 0.25,  scale * 0.18, -scale * 0.5,
+            0, 0, -scale * 0.12,  -scale * 0.25,  scale * 0.18, -scale * 0.5,
+            // base rectangle
+            -scale * 0.25, -scale * 0.18, -scale * 0.5,  scale * 0.25, -scale * 0.18, -scale * 0.5,
+             scale * 0.25, -scale * 0.18, -scale * 0.5,  scale * 0.25,  scale * 0.18, -scale * 0.5,
+             scale * 0.25,  scale * 0.18, -scale * 0.5, -scale * 0.25,  scale * 0.18, -scale * 0.5,
+            -scale * 0.25,  scale * 0.18, -scale * 0.5, -scale * 0.25, -scale * 0.18, -scale * 0.5
+        ]);
+        frustumGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        const frustumMat = new THREE.LineBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.35
+        });
+        const frustum = new THREE.LineSegments(frustumGeom, frustumMat);
+        cameraGroup.add(frustum);
+
+        return cameraGroup;
+    }
     function addCameraMarker(group, cam, scale) {
         const pos = new THREE.Vector3(cam.position[0], cam.position[1], cam.position[2]);
         const color = cam.color || 0xffb300;
-        const marker = new THREE.Mesh(new THREE.SphereGeometry(scale * 0.12, 12, 12), new THREE.MeshBasicMaterial({ color }));
-        marker.position.copy(pos);
-        group.add(marker);
-        group.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), pos, scale, 0xff3b30, scale * 0.2, scale * 0.07));
-        group.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), pos, scale, 0x2ecc71, scale * 0.2, scale * 0.07));
-        group.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), pos, scale, 0x00a0ff, scale * 0.2, scale * 0.07));
+        
+        // Create custom camera mesh
+        const cameraMesh = createCameraMesh(color, scale);
+        cameraMesh.position.copy(pos);
+        
+        // Orient the camera if cam.axes is available
+        if (cam.axes) {
+            const m = new THREE.Matrix4();
+            m.makeBasis(
+                new THREE.Vector3(...cam.axes[0]),
+                new THREE.Vector3(...cam.axes[1]),
+                new THREE.Vector3(...cam.axes[2])
+            );
+            cameraMesh.setRotationFromMatrix(m);
+            // Rotate 180 degrees around local Y axis because lens is designed pointing to negative Z,
+            // but camera coordinates positive Z is forward.
+            cameraMesh.rotateY(Math.PI);
+        } else {
+            // For calibration cameras without axes, let them point towards the center of the plate
+            // Depth/world is at [0,0,0], IR left at [0,0,0], IR right at [-0.17, 0, 0]
+            // The plates are at around X=0.24, Y=-0.1, Z=0.67
+            cameraMesh.lookAt(new THREE.Vector3(0.24, 0, 0.67));
+        }
+
+        group.add(cameraMesh);
+        
+        // Add orientation axis arrows
+        if (cam.axes) {
+            group.add(new THREE.ArrowHelper(new THREE.Vector3(...cam.axes[0]).normalize(), pos, scale * 1.5, 0xff3b30, scale * 0.3, scale * 0.1));
+            group.add(new THREE.ArrowHelper(new THREE.Vector3(...cam.axes[1]).normalize(), pos, scale * 1.5, 0x2ecc71, scale * 0.3, scale * 0.1));
+            group.add(new THREE.ArrowHelper(new THREE.Vector3(...cam.axes[2]).normalize(), pos, scale * 1.5, 0x00a0ff, scale * 0.3, scale * 0.1));
+        } else {
+            const dirX = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraMesh.quaternion);
+            const dirY = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraMesh.quaternion);
+            const dirZ = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraMesh.quaternion);
+            
+            group.add(new THREE.ArrowHelper(dirX, pos, scale * 1.5, 0xff3b30, scale * 0.3, scale * 0.1));
+            group.add(new THREE.ArrowHelper(dirY, pos, scale * 1.5, 0x2ecc71, scale * 0.3, scale * 0.1));
+            group.add(new THREE.ArrowHelper(dirZ, pos, scale * 1.5, 0x00a0ff, scale * 0.3, scale * 0.1));
+        }
     }
     function updateCameraReadout(plyCamera) {
         const el = document.getElementById('camera-readout');
