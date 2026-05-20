@@ -161,27 +161,15 @@
         });
         const centers = [];
         const boundaries = [];
+        const boundaryPairs = [];
         let lastX = null;
+        const maxSliceJump = 0.015;
         for (let i = 0; i < sliceCount; i++) {
             const slice = bins[i];
             if (slice.length < 30) continue;
             slice.sort((a, b) => a[0] - b[0]);
-            const candidates = [];
-            for (let j = 0; j < slice.length - 1; j++) {
-                const diff = slice[j + 1][0] - slice[j][0];
-                if (!((diff >= 0.002 && diff <= 0.008) || (diff >= 0.0015 && diff <= 0.012))) continue;
-                const xl = slice[j][0];
-                const xr = slice[j + 1][0];
-                let leftCount = 0;
-                let rightCount = 0;
-                for (let k = 0; k < slice.length; k++) {
-                    const x = slice[k][0];
-                    if (x > xl - 0.045 && x < xl - 0.005) leftCount++;
-                    if (x > xr + 0.005 && x < xr + 0.045) rightCount++;
-                }
-                const requiredCount = Math.max(12, Math.min(60, Math.floor(slice.length * 0.04)));
-                if (leftCount >= requiredCount && rightCount >= requiredCount) candidates.push(j);
-            }
+            let candidates = findGapCandidates(slice, 0.002, 0.008);
+            if (candidates.length === 0) candidates = findGapCandidates(slice, 0.0015, 0.012);
             if (candidates.length === 0) continue;
             let best = candidates[0];
             if (lastX === null) {
@@ -195,24 +183,107 @@
             const x = (p1[0] + p2[0]) / 2;
             const y = bounds.minY + (i + 0.5) * ySpan / sliceCount;
             const z = plane.ax * x + plane.by * y + plane.c;
-            if (lastX === null || Math.abs(x - lastX) < 0.04) {
+            if (lastX === null || Math.abs(x - lastX) < maxSliceJump) {
                 centers.push([x, y, z]);
                 boundaries.push(p1, p2);
+                boundaryPairs.push([p1, p2]);
                 lastX = x;
             }
         }
         if (centers.length < 8) throw new Error('未检测到连续焊缝空隙，请确认点云坐标方向与钢板拼缝一致');
-        const trajectory = smoothTrajectory(centers);
+        const inlierIndices = largestDbscanCluster(centers, 0.015, 10);
+        const cleanCenters = inlierIndices.length > 0 ? inlierIndices.map((idx) => centers[idx]) : centers;
+        const cleanBoundaries = inlierIndices.length > 0
+            ? inlierIndices.flatMap((idx) => boundaryPairs[idx])
+            : boundaries;
+        const trajectory = smoothTrajectory(cleanCenters);
         return {
             plates: downsampled,
-            boundaries,
+            boundaries: cleanBoundaries,
             trajectory,
             stats: {
                 total_points: totalPoints,
                 seam_length: polylineLength(trajectory) * 1000,
-                avg_width: averageGapWidth(boundaries) * 1000
+                avg_width: averageGapWidth(cleanBoundaries) * 1000
             }
         };
+    }
+
+    function findGapCandidates(slice, minWidth, maxWidth) {
+        const candidates = [];
+        for (let j = 0; j < slice.length - 1; j++) {
+            const diff = slice[j + 1][0] - slice[j][0];
+            if (diff < minWidth || diff > maxWidth) continue;
+            const xl = slice[j][0];
+            const xr = slice[j + 1][0];
+            let leftCount = 0;
+            let rightCount = 0;
+            for (let k = 0; k < slice.length; k++) {
+                const x = slice[k][0];
+                if (x > xl - 0.045 && x < xl - 0.005) leftCount++;
+                if (x > xr + 0.005 && x < xr + 0.045) rightCount++;
+            }
+            if (leftCount >= 60 && rightCount >= 60) candidates.push(j);
+        }
+        return candidates;
+    }
+
+    function largestDbscanCluster(points, eps, minPoints) {
+        const labels = new Array(points.length).fill(undefined);
+        const clusters = [];
+        let clusterId = 0;
+
+        for (let i = 0; i < points.length; i++) {
+            if (labels[i] !== undefined) continue;
+            const neighbors = regionQuery(points, i, eps);
+            if (neighbors.length < minPoints) {
+                labels[i] = -1;
+                continue;
+            }
+
+            clusters[clusterId] = [];
+            expandCluster(points, labels, clusters[clusterId], i, neighbors, clusterId, eps, minPoints);
+            clusterId++;
+        }
+
+        if (clusters.length === 0) return [];
+        return clusters
+            .reduce((best, cluster) => cluster.length > best.length ? cluster : best, [])
+            .slice()
+            .sort((a, b) => a - b);
+    }
+
+    function expandCluster(points, labels, cluster, pointIndex, neighbors, clusterId, eps, minPoints) {
+        labels[pointIndex] = clusterId;
+        cluster.push(pointIndex);
+
+        for (let cursor = 0; cursor < neighbors.length; cursor++) {
+            const neighborIndex = neighbors[cursor];
+            if (labels[neighborIndex] === -1) {
+                labels[neighborIndex] = clusterId;
+                cluster.push(neighborIndex);
+            }
+            if (labels[neighborIndex] !== undefined) continue;
+
+            labels[neighborIndex] = clusterId;
+            cluster.push(neighborIndex);
+            const nextNeighbors = regionQuery(points, neighborIndex, eps);
+            if (nextNeighbors.length >= minPoints) {
+                for (const nextIndex of nextNeighbors) {
+                    if (!neighbors.includes(nextIndex)) neighbors.push(nextIndex);
+                }
+            }
+        }
+    }
+
+    function regionQuery(points, pointIndex, eps) {
+        const neighbors = [];
+        const p = points[pointIndex];
+        for (let i = 0; i < points.length; i++) {
+            const q = points[i];
+            if (Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) <= eps) neighbors.push(i);
+        }
+        return neighbors;
     }
     function centerX(points, idx) {
         return (points[idx][0] + points[idx + 1][0]) / 2;
@@ -374,6 +445,5 @@
         if (el) el.textContent = text;
     }
 })();
-
 
 
